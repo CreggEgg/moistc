@@ -1,47 +1,82 @@
-use logos::Logos;
+// use logos::Logos;
 
 // #[derive(Default, Debug, Clone, PartialEq)]
 // enum LexingError {
 //     #[default]
 //     ,
 // }
-pub mod ast;
+// pub mod ast;
 
-#[derive(Logos, Debug, PartialEq)]
-#[logos()]
-pub enum Token {
-    #[regex(r#"[0-9]+"#, |lexer| lexer.slice().parse::<u64>().unwrap())]
-    Number(u64),
+use crate::grammar;
 
-    #[token("+")]
-    Plus,
-
-    #[regex(r#""([^"\\]|u[a-fA-F0-9]{4})*""#, |lexer| {let slice = lexer.slice();let len = slice.len() - 1;String::from(&slice[1..len])})]
-    Str(String),
-
-    #[regex(r"[ \t\r\n\f]+")]
-    WHITESPACE,
-
-    #[token("save")]
-    Save,
-
-    #[token("to")]
-    To,
-
-    #[token(".")]
-    Period,
-
-    #[regex(r#"[a-zA-Z]+"#, |lexer| lexer.slice().to_string())]
-    Ident(String),
+// #[derive(Logos, Debug, PartialEq)]
+// #[logos()]
+// pub enum Token {
+//     #[regex(r#"[0-9]+"#, |lexer| lexer.slice().parse::<u64>().unwrap())]
+//     Number(u64),
+//
+//     #[token("+")]
+//     Plus,
+//
+//     // #[regex(r#""([^"\\]|u[a-fA-F0-9]{4})*""#, |lexer| {let slice = lexer.slice();let len = slice.len() - 1;String::from(&slice[1..len])})]
+//     // Str(String),
+//
+//     #[regex(r"[ \t\r\n\f]+")]
+//     WHITESPACE,
+//
+//     // #[token("save")]
+//     // Save,
+//     //
+//     // #[token("to")]
+//     // To,
+//
+//     #[token(".")]
+//     Period,
+//
+//     #[token("wayto")]
+//     Period,
+//
+//     #[regex(r#"[a-zA-Z]+"#, |lexer| lexer.slice().to_string())]
+//     Ident(String),
+// }
+//
+#[derive(Debug)]
+pub enum Value {
+    Unit,
+    Number(i32),
 }
-pub fn extract_tokens(string: String) -> Vec<Token> {
-    let lexer = Token::lexer(&string);
-    lexer
-        .enumerate()
-        .map(|(i, x)| {
-            let x = x.unwrap();
-            // println!("{i}, {:?}", &x);
-            x
-        })
-        .collect::<Vec<Token>>()
+
+#[derive(Debug)]
+pub enum Expr {
+    Value(Value),
+    Ident(String),
+    Operation(Box<Expr>, Op, Box<Expr>),
+}
+
+#[derive(Debug)]
+pub struct Func {
+    pub name: String,
+    pub args: Vec<String>,
+    pub body: Expr,
+}
+
+#[derive(Debug)]
+pub enum Op {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+pub fn extract_funcs(string: String) -> Vec<Func> {
+    vec![grammar::FunctionParser::new().parse(&string).unwrap()]
+    // let lexer = Token::lexer(&string);
+    // lexer
+    //     .enumerate()
+    //     .map(|(i, x)| {
+    //         let x = x.unwrap();
+    //         // println!("{i}, {:?}", &x);
+    //         x
+    //     })
+    //     .collect::<Vec<Token>>()
 }
