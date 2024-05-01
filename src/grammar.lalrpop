@@ -23,6 +23,7 @@ Number: i32 = <s:r"[0-9]+"> => i32::from_str(s).unwrap();
 
 Term: Expr = {
   Ident => Expr::Ident(<>),
+  <n: Number> => Expr::Value(Value::Number(n)),
   "(" <e:Expression> ")" => e
 }
 

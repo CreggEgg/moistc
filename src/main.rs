@@ -3,7 +3,9 @@ use std::fs::{self, File};
 use clap::Parser;
 use lalrpop_util::lalrpop_mod;
 
+mod compiler;
 mod parser;
+
 #[cfg(test)]
 mod test;
 
@@ -26,10 +28,11 @@ fn main() {
         "lex" => {
             dbg!(parser::extract_funcs(file));
         }
-        "ast" => {
-            let tokens = parser::extract_funcs(file);
-            // dbg!(parser::ast::generate_ast(tokens));
+        "exec" => {
+            let mut compiler = compiler::Compiler::new();
+            compiler.compile_program(parser::extract_funcs(file));
+            compiler.exec();
         }
-        unknown => println!("Unknown mode, {}", unknown),
+        unknown => println!("Unknown compiler command: {}", unknown),
     }
 }

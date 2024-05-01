@@ -40,27 +40,26 @@ use crate::grammar;
 //     Ident(String),
 // }
 //
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
-    Unit,
     Number(i32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Value(Value),
     Ident(String),
     Operation(Box<Expr>, Op, Box<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Func {
     pub name: String,
     pub args: Vec<String>,
     pub body: Expr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Op {
     Add,
     Sub,
