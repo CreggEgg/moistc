@@ -1,10 +1,13 @@
-use cranelift::{codegen::gimli::leb128::write, prelude::*};
-use std::{borrow::Borrow, collections::HashMap, sync::Arc};
+use cranelift::{
+    codegen::{dbg, gimli::leb128::write},
+    prelude::*,
+};
+use std::{borrow::Borrow, collections::HashMap, fs::File, sync::Arc};
 
 use cranelift::{
     codegen::{
         control::ControlPlane,
-        ir::{types::I32, AbiParam, Function, Signature, UserFuncName},
+        ir::{types::I64, AbiParam, Function, Signature, UserFuncName},
         isa::{self, CallConv, TargetIsa},
         settings::{self, Configurable},
         Context,
@@ -19,11 +22,10 @@ use crate::parser::{self, Expr, Func};
 
 pub struct Compiler {
     module: ObjectModule,
-    main_function: Function,
-    main_fid: FuncId,
     isa: Arc<dyn TargetIsa>,
     function_builder_ctx: FunctionBuilderContext,
     call_conv: CallConv,
+    functions: HashMap<String, FuncId>,
 }
 
 // enum CompilerState {
@@ -48,53 +50,69 @@ impl Compiler {
         );
         let mut obj_module = ObjectModule::new(obj_builder.unwrap());
 
-        let mut main_signature = Signature::new(call_conv);
-        main_signature.returns.push(AbiParam::new(I32));
-        let main_fid = obj_module
-            .declare_function("main", cranelift_module::Linkage::Export, &main_signature)
-            .unwrap();
-
-        let main_func = Function::with_name_signature(UserFuncName::user(0, 0), main_signature);
-
         Self {
             module: obj_module,
-            main_function: main_func,
-            main_fid,
             isa,
             call_conv,
             function_builder_ctx: FunctionBuilderContext::new(),
+            functions: HashMap::new(),
         }
     }
 
-    pub fn compile_program(&mut self, funcs: Vec<Func>) {
+    pub fn compile_program(&mut self, funcs: Vec<Func>) -> Context {
+        let mut ctx = self.module.make_context(); //for_function(self.main_function.clone()); //ew ugly clone please remove
         for (i, func) in funcs.iter().enumerate() {
-            let mut sig = Signature::new(self.call_conv);
-            sig.returns.push(AbiParam::new(I32));
+            let mut signature = Signature::new(self.call_conv);
+            signature.returns.push(AbiParam::new(I64));
+            let fid = self
+                .module
+                .declare_function(&func.name, cranelift_module::Linkage::Export, &signature)
+                .unwrap();
 
-            let mut function =
-                Function::with_name_signature(UserFuncName::user(0, i.try_into().unwrap()), sig);
+            // dbg!(&signature);
 
-            let function_builder =
+            let mut function = Function::with_name_signature(
+                UserFuncName::user(0, i.try_into().unwrap()),
+                signature,
+            );
+
+            let mut function_builder =
                 FunctionBuilder::new(&mut function, &mut self.function_builder_ctx);
-            let function_compiler = FunctionCompiler::new(function_builder, func.clone());
+            let entry = function_builder.create_block();
+
+            function_builder.switch_to_block(entry);
+
+            function_builder.seal_block(entry);
+            function_builder.append_block_params_for_function_params(entry);
+
+            let function_compiler = FunctionCompiler::new(
+                function_builder,
+                func.clone(),
+                self.module,
+                self.functions.clone(),
+            );
             function_compiler.compile();
+
+            ctx.func = function;
+
+            self.module.define_function(fid, &mut ctx).unwrap();
         }
+        ctx
     }
 
     // fn compile_function(&mut self, func: &Func, mut function: Function) {
     //     let ret = self.compile_expr(&func.body, function_builder);
     // }
 
-    fn finalize(&mut self) -> Context {
-        let mut ctx = Context::for_function(self.main_function.clone()); //ew ugly clone please remove
-        self.module
-            .define_function(self.main_fid, &mut ctx)
-            .unwrap();
-        ctx
-    }
+    // fn finalize(&mut self) -> Context {
+    //     ctx
+    // }
 
-    pub fn exec(&mut self) {
-        let mut ctx = self.finalize();
+    pub fn exec(&mut self, funcs: Vec<Func>) {
+        let mut ctx = self.compile_program(funcs);
+
+        dbg!(&ctx.func.name);
+
         let code = ctx
             .compile(self.isa.borrow(), &mut ControlPlane::default())
             .unwrap();
@@ -115,9 +133,16 @@ impl Compiler {
 
             code_fn()
         };
-        dbg!(out);
         // let outfile = File::create("./main.o").unwrap();
         // ob
+        println!("💦: {}", out);
+    }
+
+    pub fn build(mut self, funcs: Vec<Func>) {
+        let _ = self.compile_program(funcs);
+        let res = self.module.finish();
+        let outfile = File::create("./main.o").unwrap();
+        res.object.write_stream(outfile).unwrap();
     }
 }
 
@@ -125,25 +150,29 @@ struct FunctionCompiler<'a> {
     builder: FunctionBuilder<'a>,
     func: Func,
     variables: HashMap<String, Variable>,
+    functions: HashMap<String, FuncId>,
+    module: ObjectModule,
 }
 
 impl<'a> FunctionCompiler<'a> {
-    pub fn new(builder: FunctionBuilder<'a>, func: Func) -> Self {
+    pub fn new(
+        builder: FunctionBuilder<'a>,
+        func: Func,
+        module: ObjectModule,
+        functions: HashMap<String, FuncId>,
+    ) -> Self {
         Self {
             builder,
             func,
             variables: HashMap::new(),
+            functions,
+            module,
         }
     }
 
     pub fn compile(mut self) {
-        let entry = self.builder.create_block();
-
-        self.builder.switch_to_block(entry);
-
-        self.builder.seal_block(entry);
-
         let ret = self.compile_expr(self.func.body.clone());
+        // dbg!(ret);
         self.builder.ins().return_(&[ret]);
 
         self.builder.finalize();
@@ -151,7 +180,7 @@ impl<'a> FunctionCompiler<'a> {
 
     fn compile_expr(&mut self, expr: Expr) -> Value {
         match expr {
-            Expr::Value(parser::Value::Number(x)) => self.builder.ins().iconst(I32, i64::from(x)),
+            Expr::Value(parser::Value::Number(x)) => self.builder.ins().iconst(I64, i64::from(x)),
             Expr::Ident(ident) => {
                 let variable = self
                     .variables
@@ -170,6 +199,31 @@ impl<'a> FunctionCompiler<'a> {
                     parser::Op::Div => ins.sdiv(lhs, rhs),
                 }
             }
+            Expr::Def { ident, value, body } => {
+                let value = self.compile_expr(*value);
+                let variable = Variable::from_u32(self.variables.keys().len() as u32);
+                self.builder.declare_var(variable, I64);
+                self.builder.def_var(variable, value);
+                self.variables.insert(ident, variable);
+                self.compile_expr(*body)
+            }
+            Expr::FunctionCall(name, args) => {
+                let func = self.module.declare_func_in_func(
+                    *self
+                        .functions
+                        .get(&name)
+                        .expect(&format!("Undefined function {}", name)),
+                    self.builder.func,
+                );
+                let args = args.iter().map(|arg| self.compile_expr(**arg));
+                let ret = self.builder.ins().call(func, args);
+            }
         }
     }
 }
+
+// mod prelude {
+//     pub extern "C" fn printchar(ch: i64) {
+//         println!("💦: {}", char::from_u32(ch as u32).unwrap());
+//     }
+// }

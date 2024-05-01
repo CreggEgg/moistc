@@ -50,6 +50,12 @@ pub enum Expr {
     Value(Value),
     Ident(String),
     Operation(Box<Expr>, Op, Box<Expr>),
+    Def {
+        ident: String,
+        value: Box<Expr>,
+        body: Box<Expr>,
+    },
+    FunctionCall(String, Vec<Box<Expr>>)
 }
 
 #[derive(Debug, Clone)]
@@ -68,7 +74,7 @@ pub enum Op {
 }
 
 pub fn extract_funcs(string: String) -> Vec<Func> {
-    vec![grammar::FunctionParser::new().parse(&string).unwrap()]
+    grammar::FunctionsParser::new().parse(&string).unwrap()
     // let lexer = Token::lexer(&string);
     // lexer
     //     .enumerate()

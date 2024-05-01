@@ -30,8 +30,13 @@ fn main() {
         }
         "exec" => {
             let mut compiler = compiler::Compiler::new();
-            compiler.compile_program(parser::extract_funcs(file));
-            compiler.exec();
+
+            compiler.exec(parser::extract_funcs(file));
+        }
+        "build" => {
+            let mut compiler = compiler::Compiler::new();
+
+            compiler.build(parser::extract_funcs(file));
         }
         unknown => println!("Unknown compiler command: {}", unknown),
     }
