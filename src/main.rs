@@ -34,7 +34,7 @@ fn main() {
             compiler.exec(parser::extract_funcs(file));
         }
         "build" => {
-            let mut compiler = compiler::Compiler::new();
+            let compiler = compiler::Compiler::new();
 
             compiler.build(parser::extract_funcs(file));
         }

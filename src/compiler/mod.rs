@@ -2,7 +2,7 @@ use cranelift::{
     codegen::{dbg, gimli::leb128::write},
     prelude::*,
 };
-use std::{borrow::Borrow, collections::HashMap, fs::File, sync::Arc};
+use std::{any::Any, borrow::Borrow, collections::HashMap, fs::File, sync::Arc};
 
 use cranelift::{
     codegen::{
@@ -14,7 +14,7 @@ use cranelift::{
     },
     frontend::{FunctionBuilder, FunctionBuilderContext},
 };
-use cranelift_module::{FuncId, Module};
+use cranelift_module::{FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule, ObjectProduct};
 use target_lexicon::Triple;
 
@@ -66,7 +66,7 @@ impl Compiler {
             signature.returns.push(AbiParam::new(I64));
             let fid = self
                 .module
-                .declare_function(&func.name, cranelift_module::Linkage::Export, &signature)
+                .declare_function(&func.name, cranelift_module::Linkage::Local, &signature)
                 .unwrap();
 
             // dbg!(&signature);
@@ -88,11 +88,14 @@ impl Compiler {
             let function_compiler = FunctionCompiler::new(
                 function_builder,
                 func.clone(),
-                self.module,
+                &mut self.module,
                 self.functions.clone(),
             );
             function_compiler.compile();
 
+            self.functions.insert(func.name.clone(), fid);
+
+            println!("{}", function.clone());
             ctx.func = function;
 
             self.module.define_function(fid, &mut ctx).unwrap();
@@ -135,7 +138,8 @@ impl Compiler {
         };
         // let outfile = File::create("./main.o").unwrap();
         // ob
-        println!("💦: {}", out);
+        println!("💦: 5 {:b}", 5);
+        println!("💦: {} {:b}", out, out);
     }
 
     pub fn build(mut self, funcs: Vec<Func>) {
@@ -151,14 +155,14 @@ struct FunctionCompiler<'a> {
     func: Func,
     variables: HashMap<String, Variable>,
     functions: HashMap<String, FuncId>,
-    module: ObjectModule,
+    module: &'a mut ObjectModule,
 }
 
 impl<'a> FunctionCompiler<'a> {
     pub fn new(
         builder: FunctionBuilder<'a>,
         func: Func,
-        module: ObjectModule,
+        module: &'a mut ObjectModule,
         functions: HashMap<String, FuncId>,
     ) -> Self {
         Self {
@@ -171,9 +175,10 @@ impl<'a> FunctionCompiler<'a> {
     }
 
     pub fn compile(mut self) {
-        let ret = self.compile_expr(self.func.body.clone());
+        let returning = self.compile_expr(self.func.body.clone());
         // dbg!(ret);
-        self.builder.ins().return_(&[ret]);
+        dbg!(returning);
+        self.builder.ins().return_(&[returning]);
 
         self.builder.finalize();
     }
@@ -208,6 +213,8 @@ impl<'a> FunctionCompiler<'a> {
                 self.compile_expr(*body)
             }
             Expr::FunctionCall(name, args) => {
+                dbg!(&self.functions);
+
                 let func = self.module.declare_func_in_func(
                     *self
                         .functions
@@ -215,8 +222,14 @@ impl<'a> FunctionCompiler<'a> {
                         .expect(&format!("Undefined function {}", name)),
                     self.builder.func,
                 );
-                let args = args.iter().map(|arg| self.compile_expr(**arg));
-                let ret = self.builder.ins().call(func, args);
+                let args = args
+                    .iter()
+                    .map(|arg| self.compile_expr(*arg.clone()))
+                    .collect::<Vec<Value>>();
+                let ret = self.builder.ins().call(func, &args);
+                let recieved = self.builder.inst_results(ret);
+                dbg!(recieved);
+                recieved[0]
             }
         }
     }
