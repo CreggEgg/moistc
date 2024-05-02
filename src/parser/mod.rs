@@ -53,9 +53,17 @@ pub enum Expr {
     Def {
         ident: String,
         value: Box<Expr>,
-        body: Box<Expr>,
     },
-    FunctionCall(String, Vec<Box<Expr>>)
+    Then {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    FunctionCall(String, Vec<Box<Expr>>),
+    IfThen {
+        condition: Box<Expr>,
+        then: Box<Expr>,
+        other: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +79,12 @@ pub enum Op {
     Sub,
     Mul,
     Div,
+    Ge,
+    Le,
+    Gt,
+    Lt,
+    Eq,
+    Neq,
 }
 
 pub fn extract_funcs(string: String) -> Vec<Func> {

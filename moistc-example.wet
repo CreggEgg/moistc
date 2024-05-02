@@ -1,6 +1,7 @@
 funion hello[] (
-	x is 5+5 then (x)
+	32*2
 )
 funion main[] (
-	x is 5+6 then (hello[])
+	(x is 3).
+	if x < 5 then printchar[64] else print[64] end;
 )

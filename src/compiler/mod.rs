@@ -1,5 +1,5 @@
 use cranelift::{
-    codegen::{dbg, gimli::leb128::write},
+    codegen::{dbg, gimli::leb128::write, ir::types::I8},
     prelude::*,
 };
 use std::{any::Any, borrow::Borrow, collections::HashMap, fs::File, sync::Arc};
@@ -19,6 +19,19 @@ use cranelift_object::{ObjectBuilder, ObjectModule, ObjectProduct};
 use target_lexicon::Triple;
 
 use crate::parser::{self, Expr, Func};
+
+macro_rules! core_fn {
+    ($name: expr, $functions: ident, $module: ident, $call_conv: ident) => {
+        let mut signature = Signature::new($call_conv);
+        signature.params.push(AbiParam::new(I64));
+        signature.returns.push(AbiParam::new(I64));
+
+        let fid = $module
+            .declare_function($name, Linkage::Import, &signature)
+            .unwrap();
+        $functions.insert($name.to_string(), fid);
+    };
+}
 
 pub struct Compiler {
     module: ObjectModule,
@@ -50,12 +63,21 @@ impl Compiler {
         );
         let mut obj_module = ObjectModule::new(obj_builder.unwrap());
 
+        let mut functions = HashMap::new();
+
+        // Add print function
+
+        core_fn!("print", functions, obj_module, call_conv);
+        core_fn!("printchar", functions, obj_module, call_conv);
+        core_fn!("printcharln", functions, obj_module, call_conv);
+        core_fn!("println", functions, obj_module, call_conv);
+
         Self {
             module: obj_module,
             isa,
             call_conv,
             function_builder_ctx: FunctionBuilderContext::new(),
-            functions: HashMap::new(),
+            functions,
         }
     }
 
@@ -64,9 +86,15 @@ impl Compiler {
         for (i, func) in funcs.iter().enumerate() {
             let mut signature = Signature::new(self.call_conv);
             signature.returns.push(AbiParam::new(I64));
+
+            let linkage = if func.name == String::from("main") {
+                Linkage::Export
+            } else {
+                Linkage::Local
+            };
             let fid = self
                 .module
-                .declare_function(&func.name, cranelift_module::Linkage::Local, &signature)
+                .declare_function(&func.name, linkage, &signature)
                 .unwrap();
 
             // dbg!(&signature);
@@ -179,6 +207,7 @@ impl<'a> FunctionCompiler<'a> {
         // dbg!(ret);
         dbg!(returning);
         self.builder.ins().return_(&[returning]);
+        self.builder.seal_all_blocks();
 
         self.builder.finalize();
     }
@@ -202,15 +231,16 @@ impl<'a> FunctionCompiler<'a> {
                     parser::Op::Sub => ins.isub(lhs, rhs),
                     parser::Op::Mul => ins.imul(lhs, rhs),
                     parser::Op::Div => ins.sdiv(lhs, rhs),
+                    _ => self.compile_comparsion(op, lhs, rhs),
                 }
             }
-            Expr::Def { ident, value, body } => {
+            Expr::Def { ident, value } => {
                 let value = self.compile_expr(*value);
                 let variable = Variable::from_u32(self.variables.keys().len() as u32);
                 self.builder.declare_var(variable, I64);
                 self.builder.def_var(variable, value);
                 self.variables.insert(ident, variable);
-                self.compile_expr(*body)
+                value
             }
             Expr::FunctionCall(name, args) => {
                 dbg!(&self.functions);
@@ -231,7 +261,61 @@ impl<'a> FunctionCompiler<'a> {
                 dbg!(recieved);
                 recieved[0]
             }
+            Expr::Then { lhs, rhs } => {
+                let _ = self.compile_expr(*lhs);
+                self.compile_expr(*rhs)
+            }
+            Expr::IfThen {
+                condition,
+                then,
+                other,
+            } => {
+                let condition = self.compile_expr(*condition);
+
+                let then_block = self.builder.create_block();
+                let else_block = self.builder.create_block();
+                let merge_block = self.builder.create_block();
+
+                self.builder.append_block_param(merge_block, I64);
+
+                self.builder
+                    .ins()
+                    .brif(condition, then_block, &[], else_block, &[]);
+
+                self.builder.switch_to_block(then_block);
+                self.builder.seal_block(then_block);
+                let then_ret = self.compile_expr(*then);
+                self.builder.ins().jump(merge_block, &[then_ret]);
+
+                self.builder.switch_to_block(else_block);
+                self.builder.seal_block(else_block);
+                let else_ret = self.compile_expr(*other);
+                self.builder.ins().jump(merge_block, &[else_ret]);
+
+                self.builder.switch_to_block(merge_block);
+                self.builder.seal_block(merge_block);
+
+                self.builder.block_params(merge_block)[0]
+            }
         }
+    }
+
+    fn compile_comparsion(&mut self, op: parser::Op, lhs: Value, rhs: Value) -> Value {
+        let comp = match op {
+            parser::Op::Ge => self
+                .builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs),
+            parser::Op::Le => self
+                .builder
+                .ins()
+                .icmp(IntCC::SignedLessThanOrEqual, lhs, rhs),
+            parser::Op::Gt => self.builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs),
+            parser::Op::Eq => self.builder.ins().icmp(IntCC::Equal, lhs, rhs),
+            parser::Op::Neq => self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs),
+            _ => self.builder.ins().iconst(I8, 0),
+        };
+        self.builder.ins().sextend(I64, comp)
     }
 }
 

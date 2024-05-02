@@ -14,17 +14,32 @@ pub Functions: Vec<Func> = {
 //<w: Whitespace> <w1: Whitespace>
 
 Ident: String = <s:r"[a-zA-Z_]+"> => s.to_string();
-Args: String = <s:r"\[.*\]"> => s.to_string();
+Args: Vec<Box<Expr>> = "[" <e: Comma<Expression>> "]" => e.iter().map(|el| Box::new(el.clone())).collect::<Vec<Box<Expr>>>();
+
+Comma<T>: Vec<T> = { // (1)
+    <mut v:(<T> ",")*> <e:T?> => match e { // (2)
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
+    }
+};
 
 Whitespace: String = <s:r"[ ]+"> => s.to_string();
 
 Expression: Expr = {
   <lhs: Expression> <o: Operator> <rhs: Term> => Expr::Operation(Box::new(lhs), o, Box::new(rhs)),
   <n: Number> => Expr::Value(Value::Number(n)),
-  <i: Ident> <a: Args>  => Expr::FunctionCall(i, vec![]),
+  <i: Ident> <a: Args>  => Expr::FunctionCall(i, a),
   <i: Ident> => Expr::Ident(i),
-  <i: Ident> " is " <e: Expression> " then (" <b: Expression> ")" => Expr::Def{ident: i, value: Box::new(e), body: Box::new(b)}
+  "("<i: Ident> " is " <e: Expression>")"  => Expr::Def{ident: i, value: Box::new(e), },
+  <l: Expression>"." <b: Expression> ";" => Expr::Then{lhs: Box::new(l), rhs: Box::new(b)},
+  "if " <c: Expression> " then " <b: Expression> " else " <f: Expression> "end" => Expr::IfThen {condition: Box::new(c), then: Box::new(b), other: Box::new(f)}
 }
+
+// 
+// body: Box::new(b)
 
 Number: i32 = <s:r"[0-9]+"> => i32::from_str(s).unwrap();
 
@@ -40,4 +55,10 @@ Operator: Op = {
   "-" => Op::Sub,
   "/" => Op::Div,
   "*" => Op::Mul,
+  ">=" => Op::Ge,
+  "<=" => Op::Le,
+  ">" => Op::Gt,
+  "<" => Op::Lt,
+  "=" => Op::Eq,
+  "!=" => Op::Neq,
 }
