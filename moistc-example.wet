@@ -1,8 +1,9 @@
-funion hello[x] (
-	x+1
+funion hello[x, y] (
+printchar[64].
+println[x].
+	x+y;;
 )
 funion main[] (
-	(x is readchar[5]).
-	(y is hello[x]).
-	if x > 5 then printcharln[y] else print[65] end;;
+	(y is hello[5, 10]).
+	println[y];
 )

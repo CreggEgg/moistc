@@ -20,6 +20,8 @@ use target_lexicon::Triple;
 
 use crate::parser::{self, Expr, Func};
 
+mod types;
+
 macro_rules! core_fn {
     ($name: expr, $functions: ident, $module: ident, $call_conv: ident) => {
         let mut signature = Signature::new($call_conv);
@@ -88,6 +90,13 @@ impl Compiler {
             let mut signature = Signature::new(self.call_conv);
             signature.returns.push(AbiParam::new(I64));
 
+            let mut args = HashMap::new();
+            for (idx, arg) in func.args.iter().enumerate() {
+                signature.params.push(AbiParam::new(I64));
+
+                args.insert(arg.to_string(), Variable::new(idx));
+            }
+
             let linkage = if func.name == String::from("main") {
                 Linkage::Export
             } else {
@@ -107,20 +116,21 @@ impl Compiler {
 
             let mut function_builder =
                 FunctionBuilder::new(&mut function, &mut self.function_builder_ctx);
+
             let entry = function_builder.create_block();
 
             function_builder.switch_to_block(entry);
 
             function_builder.seal_block(entry);
-            function_builder.append_block_params_for_function_params(entry);
 
             let function_compiler = FunctionCompiler::new(
                 function_builder,
                 func.clone(),
                 &mut self.module,
                 self.functions.clone(),
+                args,
             );
-            function_compiler.compile();
+            function_compiler.compile(entry);
 
             self.functions.insert(func.name.clone(), fid);
 
@@ -194,17 +204,23 @@ impl<'a> FunctionCompiler<'a> {
         func: Func,
         module: &'a mut ObjectModule,
         functions: HashMap<String, FuncId>,
+        variables: HashMap<String, Variable>,
     ) -> Self {
         Self {
             builder,
             func,
-            variables: HashMap::new(),
+            variables,
             functions,
             module,
         }
     }
 
-    pub fn compile(mut self) {
+    pub fn compile(mut self, block: Block) {
+        for (_, arg) in self.variables.iter() {
+            self.builder.declare_var(*arg, I64);
+        }
+        self.builder.append_block_params_for_function_params(block);
+
         let returning = self.compile_expr(self.func.body.clone());
         // dbg!(ret);
         dbg!(returning);
@@ -272,7 +288,7 @@ impl<'a> FunctionCompiler<'a> {
                 then,
                 other,
             } => {
-                let condition = self.compile_expr(*condition);
+                let condition_value = self.compile_expr(*condition);
 
                 let then_block = self.builder.create_block();
                 let else_block = self.builder.create_block();
@@ -282,22 +298,27 @@ impl<'a> FunctionCompiler<'a> {
 
                 self.builder
                     .ins()
-                    .brif(condition, then_block, &[], else_block, &[]);
+                    .brif(condition_value, then_block, &[], else_block, &[]);
 
                 self.builder.switch_to_block(then_block);
                 self.builder.seal_block(then_block);
-                let then_ret = self.compile_expr(*then);
-                self.builder.ins().jump(merge_block, &[then_ret]);
+                let then_return = self.compile_expr(*then);
+
+                self.builder.ins().jump(merge_block, &[then_return]);
 
                 self.builder.switch_to_block(else_block);
                 self.builder.seal_block(else_block);
-                let else_ret = self.compile_expr(*other);
-                self.builder.ins().jump(merge_block, &[else_ret]);
+                let else_return = self.compile_expr(*other);
+
+                self.builder.ins().jump(merge_block, &[else_return]);
 
                 self.builder.switch_to_block(merge_block);
+
                 self.builder.seal_block(merge_block);
 
-                self.builder.block_params(merge_block)[0]
+                let phi = self.builder.block_params(merge_block)[0];
+
+                phi
             }
         }
     }
