@@ -2,6 +2,7 @@ use std::fs::{self, File};
 
 use clap::Parser;
 use lalrpop_util::lalrpop_mod;
+use target_lexicon::Triple;
 
 mod compiler;
 mod parser;
