@@ -71,6 +71,7 @@ impl Compiler {
         core_fn!("printchar", functions, obj_module, call_conv);
         core_fn!("printcharln", functions, obj_module, call_conv);
         core_fn!("println", functions, obj_module, call_conv);
+        core_fn!("readchar", functions, obj_module, call_conv);
 
         Self {
             module: obj_module,
@@ -127,6 +128,7 @@ impl Compiler {
             ctx.func = function;
 
             self.module.define_function(fid, &mut ctx).unwrap();
+            ctx.clear();
         }
         ctx
     }
@@ -311,6 +313,7 @@ impl<'a> FunctionCompiler<'a> {
                 .ins()
                 .icmp(IntCC::SignedLessThanOrEqual, lhs, rhs),
             parser::Op::Gt => self.builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs),
+            parser::Op::Lt => self.builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs),
             parser::Op::Eq => self.builder.ins().icmp(IntCC::Equal, lhs, rhs),
             parser::Op::Neq => self.builder.ins().icmp(IntCC::NotEqual, lhs, rhs),
             _ => self.builder.ins().iconst(I8, 0),
