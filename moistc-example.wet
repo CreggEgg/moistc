@@ -1,9 +1,10 @@
-funion hello[x, y] (
+funion hello[x: Int, y: Int] (
 printchar[64].
 println[x].
 	x+y;;
 )
 funion main[] (
-	(y is hello[5, 10]).
-	println[y];
+	(x is false).
+	(y is if x then 1 else 0 end).
+	println[y];;
 )

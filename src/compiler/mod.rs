@@ -20,7 +20,7 @@ use target_lexicon::Triple;
 
 use crate::parser::{self, Expr, Func};
 
-mod types;
+pub mod types;
 
 macro_rules! core_fn {
     ($name: expr, $functions: ident, $module: ident, $call_conv: ident) => {
@@ -94,7 +94,7 @@ impl Compiler {
             for (idx, arg) in func.args.iter().enumerate() {
                 signature.params.push(AbiParam::new(I64));
 
-                args.insert(arg.to_string(), Variable::new(idx));
+                args.insert(arg.name.clone(), Variable::new(idx));
             }
 
             let linkage = if func.name == String::from("main") {
@@ -233,6 +233,9 @@ impl<'a> FunctionCompiler<'a> {
     fn compile_expr(&mut self, expr: Expr) -> Value {
         match expr {
             Expr::Value(parser::Value::Number(x)) => self.builder.ins().iconst(I64, i64::from(x)),
+            Expr::Value(parser::Value::Bool(x)) => {
+                self.builder.ins().iconst(I64, if x { 1 } else { 0 })
+            }
             Expr::Ident(ident) => {
                 let variable = self
                     .variables

@@ -4,6 +4,8 @@ use clap::Parser;
 use lalrpop_util::lalrpop_mod;
 use target_lexicon::Triple;
 
+use crate::compiler::types::TypeGenerator;
+
 mod compiler;
 mod parser;
 
@@ -28,6 +30,11 @@ fn main() {
     match &args.mode[..] {
         "lex" => {
             dbg!(parser::extract_funcs(file));
+        }
+        "type" => {
+            let funcs = parser::extract_funcs(file);
+            let mut type_generator = TypeGenerator::new();
+            dbg!(type_generator.generate_types(funcs));
         }
         "exec" => {
             let mut compiler = compiler::Compiler::new();

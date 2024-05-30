@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use crate::parser::{Op, Expr, Func, Value};
+use crate::parser::{Op, Expr, Func, Value, Arg};
 
 grammar;
 
@@ -15,7 +15,8 @@ pub Functions: Vec<Func> = {
 
 Ident: String = <s:r"[a-zA-Z_]+"> => s.to_string();
 Args: Vec<Box<Expr>> = "[" <e: Comma<Expression>> "]" => e.iter().map(|el| Box::new(el.clone())).collect::<Vec<Box<Expr>>>();
-ArgsDef: Vec<String> = "[" <i: Comma<Ident>> "]" => i.iter().map(|el| el.clone()).collect::<Vec<String>>();
+ArgsDef: Vec<Arg> = "[" <i: Comma<ArgDef>> "]" => i.iter().map(|el| el.clone()).collect::<Vec<Arg>>();
+ArgDef: Arg = <i: Ident> ":" <t: Ident> => Arg { name: i, arg_type: t};
 
 Comma<T>: Vec<T> = { // (1)
     <mut v:(<T> ",")*> <e:T?> => match e { // (2)
@@ -32,6 +33,7 @@ Whitespace: String = <s:r"[ ]+"> => s.to_string();
 Expression: Expr = {
   <lhs: Expression> <o: Operator> <rhs: Term> => Expr::Operation(Box::new(lhs), o, Box::new(rhs)),
   <n: Number> => Expr::Value(Value::Number(n)),
+  <b: Bool> => Expr::Value(Value::Bool(b)),
   <i: Ident> <a: Args>  => Expr::FunctionCall(i, a),
   <i: Ident> => Expr::Ident(i),
   "("<i: Ident> " is " <e: Expression>")"  => Expr::Def{ident: i, value: Box::new(e), },
@@ -43,6 +45,10 @@ Expression: Expr = {
 // body: Box::new(b)
 
 Number: i32 = <s:r"[0-9]+"> => i32::from_str(s).unwrap();
+Bool: bool = {
+  "true" => true,
+  "false" => false
+};
 
 
 Term: Expr = {

@@ -40,12 +40,13 @@ use crate::grammar;
 //     Ident(String),
 // }
 //
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Number(i32),
+    Bool(bool),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Value(Value),
     Ident(String),
@@ -69,11 +70,17 @@ pub enum Expr {
 #[derive(Debug, Clone)]
 pub struct Func {
     pub name: String,
-    pub args: Vec<String>,
+    pub args: Vec<Arg>,
     pub body: Expr,
 }
 
 #[derive(Debug, Clone)]
+pub struct Arg {
+    pub name: String,
+    pub arg_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     Add,
     Sub,
