@@ -1,5 +1,6 @@
 use std::str::FromStr;
 use crate::parser::{Op, Expr, Func, Value, Arg};
+use crate::compiler::types::{Type};
 
 grammar;
 
@@ -14,9 +15,18 @@ pub Functions: Vec<Func> = {
 //<w: Whitespace> <w1: Whitespace>
 
 Ident: String = <s:r"[a-zA-Z_]+"> => s.to_string();
+Type: Type = {
+  "Int" => Type::Int,
+  "Float" => Type::Float,
+  "Bool" => Type::Bool,
+  "Array<" <t: Type> ">" => Type::Array(Box::new(t)),
+}
+TypeName: Type = {
+
+};
 Args: Vec<Box<Expr>> = "[" <e: Comma<Expression>> "]" => e.iter().map(|el| Box::new(el.clone())).collect::<Vec<Box<Expr>>>();
 ArgsDef: Vec<Arg> = "[" <i: Comma<ArgDef>> "]" => i.iter().map(|el| el.clone()).collect::<Vec<Arg>>();
-ArgDef: Arg = <i: Ident> ":" <t: Ident> => Arg { name: i, arg_type: t};
+ArgDef: Arg = <i: Ident> ":" <t: Type> => Arg { name: i, arg_type: t};
 
 Comma<T>: Vec<T> = { // (1)
     <mut v:(<T> ",")*> <e:T?> => match e { // (2)

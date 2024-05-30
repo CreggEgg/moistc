@@ -1,18 +1,21 @@
-use std::{collections::HashMap, fmt::write};
+use std::{collections::HashMap, fmt::write, mem};
 
-use crate::parser::{Expr, Func, Op, Value};
+use crate::parser::{Arg, Expr, Func, Op, Value};
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Type {
     Int,
     Float,
     Bool,
+    Array(Box<Type>),
 }
 
 #[derive(Debug, Clone)]
 pub struct TypedFunc {
-    body: TypedExpr,
-    func_type: FuncType,
+    pub name: String,
+    pub args: Vec<Arg>,
+    pub func_type: FuncType,
+    pub body: TypedExpr,
 }
 
 #[derive(Debug, Clone)]
@@ -92,7 +95,7 @@ impl TypeGenerator {
             .map(|func| {
                 let mut variables = HashMap::new();
                 for arg in &func.args {
-                    variables.insert(arg.name.clone(), self.string_to_type(&arg.arg_type));
+                    variables.insert(arg.name.clone(), arg.arg_type.clone());
                 }
                 let func_type = self.generate_function_type(func.clone(), variables);
                 self.functions
@@ -110,11 +113,14 @@ impl TypeGenerator {
         let args = func
             .args
             .iter()
-            .map(|arg| self.string_to_type(&arg.arg_type))
+            .map(|arg| arg.arg_type.clone())
             .collect::<Vec<Type>>();
+        let mut func = func.clone();
         let body = self.expression_type(func.body, &mut variables);
         TypedFunc {
             body: body.clone(),
+            name: mem::take(&mut func.name),
+            args: mem::take(&mut func.args),
             func_type: FuncType {
                 args,
                 ret: get_type(body),
@@ -126,9 +132,10 @@ impl TypeGenerator {
         match body {
             Expr::Value(value) => TypedExpr::Value(self.value_type(value.clone()), value),
             Expr::Ident(ident) => TypedExpr::Ident(
-                *variables
+                variables
                     .get(&ident)
-                    .expect(&format!("Undefined variable, {ident}")),
+                    .expect(&format!("Undefined variable, {ident}"))
+                    .clone(),
                 ident,
             ),
             Expr::Operation(lhs, op, rhs) => TypedExpr::Operation(
@@ -158,7 +165,7 @@ impl TypeGenerator {
                     .functions
                     .get(&name)
                     .expect(&format!("Undefined function, {}", name));
-                let ret = function.ret;
+                let ret = function.ret.clone();
                 let fn_args = function.args.clone();
                 if !args.iter().enumerate().all(|(i, arg)| {
                     *fn_args.get(i).expect("Mismatched number of arguments")
@@ -216,19 +223,18 @@ impl TypeGenerator {
         }
     }
 
-    fn value_type(&mut self, value: crate::parser::Value) -> Type {
-        match value {
-            crate::parser::Value::Number(_) => Type::Int,
-            Value::Bool(_) => Type::Bool,
-        }
-    }
-
     fn string_to_type(&mut self, type_name: &str) -> Type {
         match type_name {
             "Int" => Type::Int,
             "Float" => Type::Float,
             "Bool" => Type::Bool,
-            x => panic!("Unknown type, {}", x),
+            x => {
+                if (x.starts_with("Array<")) {
+                    Type::Array(Box::new(self.string_to_type(&x[6..(x.len() - 1)])))
+                } else {
+                    panic!("Unknown type, {}", x)
+                }
+            }
         }
     }
 }
@@ -246,5 +252,14 @@ fn get_type(expr: TypedExpr) -> Type {
             then,
             other,
         } => get_type(*then),
+    }
+}
+pub fn value_type(value: crate::parser::Value) -> Type {
+    match value {
+        crate::parser::Value::Number(_) => Type::Int,
+        Value::Bool(_) => Type::Bool,
+        Value::Array(els) => Type::Array(Box::new(value_type(
+            els.get(0).expect("Could not infer array type").clone(),
+        ))),
     }
 }

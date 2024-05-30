@@ -1,5 +1,9 @@
 use cranelift::{
-    codegen::{dbg, gimli::leb128::write, ir::types::I8},
+    codegen::{
+        dbg,
+        gimli::leb128::write,
+        ir::{stackslot::StackSize, types::I8},
+    },
     prelude::*,
 };
 use std::{any::Any, borrow::Borrow, collections::HashMap, fs::File, sync::Arc};
@@ -19,6 +23,8 @@ use cranelift_object::{ObjectBuilder, ObjectModule, ObjectProduct};
 use target_lexicon::Triple;
 
 use crate::parser::{self, Expr, Func};
+
+use self::types::{TypedExpr, TypedFunc};
 
 pub mod types;
 
@@ -84,7 +90,7 @@ impl Compiler {
         }
     }
 
-    pub fn compile_program(&mut self, funcs: Vec<Func>) -> Context {
+    pub fn compile_program(&mut self, funcs: Vec<TypedFunc>) -> Context {
         let mut ctx = self.module.make_context(); //for_function(self.main_function.clone()); //ew ugly clone please remove
         for (i, func) in funcs.iter().enumerate() {
             let mut signature = Signature::new(self.call_conv);
@@ -153,38 +159,38 @@ impl Compiler {
     //     ctx
     // }
 
-    pub fn exec(&mut self, funcs: Vec<Func>) {
-        let mut ctx = self.compile_program(funcs);
+    // pub fn exec(&mut self, funcs: Vec<Func>) {
+    //     let mut ctx = self.compile_program(funcs);
+    //
+    //     dbg!(&ctx.func.name);
+    //
+    //     let code = ctx
+    //         .compile(self.isa.borrow(), &mut ControlPlane::default())
+    //         .unwrap();
+    //
+    //     let code_buffer = code.code_buffer();
+    //     let mut buffer = memmap2::MmapOptions::new()
+    //         .len(code_buffer.len())
+    //         .map_anon()
+    //         .unwrap();
+    //
+    //     buffer.copy_from_slice(code_buffer);
+    //
+    //     let buffer = buffer.make_exec().unwrap();
+    //
+    //     let out = unsafe {
+    //         let code_fn: unsafe extern "sysv64" fn() -> usize =
+    //             std::mem::transmute(buffer.as_ptr());
+    //
+    //         code_fn()
+    //     };
+    //     // let outfile = File::create("./main.o").unwrap();
+    //     // ob
+    //     println!("💦: 5 {:b}", 5);
+    //     println!("💦: {} {:b}", out, out);
+    // }
 
-        dbg!(&ctx.func.name);
-
-        let code = ctx
-            .compile(self.isa.borrow(), &mut ControlPlane::default())
-            .unwrap();
-
-        let code_buffer = code.code_buffer();
-        let mut buffer = memmap2::MmapOptions::new()
-            .len(code_buffer.len())
-            .map_anon()
-            .unwrap();
-
-        buffer.copy_from_slice(code_buffer);
-
-        let buffer = buffer.make_exec().unwrap();
-
-        let out = unsafe {
-            let code_fn: unsafe extern "sysv64" fn() -> usize =
-                std::mem::transmute(buffer.as_ptr());
-
-            code_fn()
-        };
-        // let outfile = File::create("./main.o").unwrap();
-        // ob
-        println!("💦: 5 {:b}", 5);
-        println!("💦: {} {:b}", out, out);
-    }
-
-    pub fn build(mut self, funcs: Vec<Func>) {
+    pub fn build(mut self, funcs: Vec<TypedFunc>) {
         let _ = self.compile_program(funcs);
         let res = self.module.finish();
         let outfile = File::create("./main.o").unwrap();
@@ -194,7 +200,7 @@ impl Compiler {
 
 struct FunctionCompiler<'a> {
     builder: FunctionBuilder<'a>,
-    func: Func,
+    func: TypedFunc,
     variables: HashMap<String, Variable>,
     functions: HashMap<String, FuncId>,
     module: &'a mut ObjectModule,
@@ -203,7 +209,7 @@ struct FunctionCompiler<'a> {
 impl<'a> FunctionCompiler<'a> {
     pub fn new(
         builder: FunctionBuilder<'a>,
-        func: Func,
+        func: TypedFunc,
         module: &'a mut ObjectModule,
         functions: HashMap<String, FuncId>,
         variables: HashMap<String, Variable>,
@@ -237,13 +243,26 @@ impl<'a> FunctionCompiler<'a> {
         self.builder.finalize();
     }
 
-    fn compile_expr(&mut self, expr: Expr) -> Value {
+    fn compile_expr(&mut self, expr: TypedExpr) -> Value {
         match expr {
-            Expr::Value(parser::Value::Number(x)) => self.builder.ins().iconst(I64, i64::from(x)),
-            Expr::Value(parser::Value::Bool(x)) => {
+            TypedExpr::Value(r#type, parser::Value::Number(x)) => {
+                self.builder.ins().iconst(I64, i64::from(x))
+            }
+            TypedExpr::Value(r#type, parser::Value::Bool(x)) => {
                 self.builder.ins().iconst(I64, if x { 1 } else { 0 })
             }
-            Expr::Ident(ident) => {
+            TypedExpr::Value(r#type, parser::Value::Array(x)) => {
+                let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    64 * (x.len() as u32),
+                ));
+                for i in 0..x.len() {
+                    let value = self.compile_expr(TypedExpr::Value(types::value_type(x[i]), x[i]));
+                    self.builder.ins().stack_store(value, slot, (i as i32) * 64);
+                }
+                self.builder.ins().stack_addr(I64, slot, 0)
+            }
+            TypedExpr::Ident(r#type, ident) => {
                 dbg!(&self.variables);
                 let variable = self
                     .variables
@@ -252,7 +271,7 @@ impl<'a> FunctionCompiler<'a> {
                 println!("{}: {:?}", &ident, &variable);
                 dbg!(self.builder.use_var(*variable))
             }
-            Expr::Operation(lhs, op, rhs) => {
+            TypedExpr::Operation(r#type, lhs, op, rhs) => {
                 let lhs = self.compile_expr(*lhs);
                 let rhs = self.compile_expr(*rhs);
                 let ins = self.builder.ins();
@@ -264,7 +283,7 @@ impl<'a> FunctionCompiler<'a> {
                     _ => self.compile_comparsion(op, lhs, rhs),
                 }
             }
-            Expr::Def { ident, value } => {
+            TypedExpr::Def { ident, value } => {
                 let value = self.compile_expr(*value);
                 let variable = Variable::from_u32(self.variables.keys().len() as u32);
                 self.builder.declare_var(variable, I64);
@@ -272,7 +291,7 @@ impl<'a> FunctionCompiler<'a> {
                 self.variables.insert(ident, variable);
                 value
             }
-            Expr::FunctionCall(name, args) => {
+            TypedExpr::FunctionCall(r#type, name, args) => {
                 dbg!(&self.functions);
 
                 let func = self.module.declare_func_in_func(
@@ -295,11 +314,11 @@ impl<'a> FunctionCompiler<'a> {
                 dbg!(recieved);
                 recieved[0]
             }
-            Expr::Then { lhs, rhs } => {
+            TypedExpr::Then { lhs, rhs } => {
                 let _ = self.compile_expr(*lhs);
                 self.compile_expr(*rhs)
             }
-            Expr::IfThen {
+            TypedExpr::IfThen {
                 condition,
                 then,
                 other,

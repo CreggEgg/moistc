@@ -7,7 +7,7 @@
 // }
 // pub mod ast;
 
-use crate::grammar;
+use crate::{compiler::types::Type, grammar};
 
 // #[derive(Logos, Debug, PartialEq)]
 // #[logos()]
@@ -44,6 +44,7 @@ use crate::grammar;
 pub enum Value {
     Number(i32),
     Bool(bool),
+    Array(Vec<Value>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -77,7 +78,7 @@ pub struct Func {
 #[derive(Debug, Clone)]
 pub struct Arg {
     pub name: String,
-    pub arg_type: String,
+    pub arg_type: Type,
 }
 
 #[derive(Debug, Clone, PartialEq)]

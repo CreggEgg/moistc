@@ -36,15 +36,10 @@ fn main() {
             let mut type_generator = TypeGenerator::new();
             dbg!(type_generator.generate_types(funcs));
         }
-        "exec" => {
-            let mut compiler = compiler::Compiler::new();
-
-            compiler.exec(parser::extract_funcs(file));
-        }
         "build" => {
             let compiler = compiler::Compiler::new();
 
-            compiler.build(parser::extract_funcs(file));
+            compiler.build(TypeGenerator::new().generate_types(parser::extract_funcs(file)));
         }
         unknown => println!("Unknown compiler command: {}", unknown),
     }
