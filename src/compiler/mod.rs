@@ -94,7 +94,9 @@ impl Compiler {
             for (idx, arg) in func.args.iter().enumerate() {
                 signature.params.push(AbiParam::new(I64));
 
-                args.insert(arg.name.clone(), Variable::new(idx));
+                let var = Variable::new(idx);
+                dbg!(&var);
+                args.insert(arg.name.clone(), var);
             }
 
             let linkage = if func.name == String::from("main") {
@@ -206,6 +208,7 @@ impl<'a> FunctionCompiler<'a> {
         functions: HashMap<String, FuncId>,
         variables: HashMap<String, Variable>,
     ) -> Self {
+        dbg!(&variables);
         Self {
             builder,
             func,
@@ -216,10 +219,14 @@ impl<'a> FunctionCompiler<'a> {
     }
 
     pub fn compile(mut self, block: Block) {
-        for (_, arg) in self.variables.iter() {
-            self.builder.declare_var(*arg, I64);
-        }
         self.builder.append_block_params_for_function_params(block);
+        for (i, (_, arg)) in self.variables.iter().enumerate() {
+            self.builder.declare_var(*arg, I64);
+            if let Some(param) = self.builder.block_params(block).get(i) {
+                self.builder.def_var(*arg, *param);
+            }
+        }
+        dbg!(self.builder.block_params(block));
 
         let returning = self.compile_expr(self.func.body.clone());
         // dbg!(ret);
@@ -237,11 +244,13 @@ impl<'a> FunctionCompiler<'a> {
                 self.builder.ins().iconst(I64, if x { 1 } else { 0 })
             }
             Expr::Ident(ident) => {
+                dbg!(&self.variables);
                 let variable = self
                     .variables
                     .get(&ident)
                     .expect(&format!("Found undefined variable {}", ident));
-                self.builder.use_var(*variable)
+                println!("{}: {:?}", &ident, &variable);
+                dbg!(self.builder.use_var(*variable))
             }
             Expr::Operation(lhs, op, rhs) => {
                 let lhs = self.compile_expr(*lhs);
@@ -273,9 +282,13 @@ impl<'a> FunctionCompiler<'a> {
                         .expect(&format!("Undefined function {}", name)),
                     self.builder.func,
                 );
+
                 let args = args
                     .iter()
-                    .map(|arg| self.compile_expr(*arg.clone()))
+                    .map(|arg| {
+                        dbg!(&arg);
+                        dbg!(self.compile_expr(*arg.clone()))
+                    })
                     .collect::<Vec<Value>>();
                 let ret = self.builder.ins().call(func, &args);
                 let recieved = self.builder.inst_results(ret);
