@@ -24,7 +24,7 @@ use target_lexicon::Triple;
 
 use crate::parser::{self, Expr, Func};
 
-use self::types::{TypedExpr, TypedFunc};
+use self::types::{TypedExpr, TypedFunc, TypedValue};
 
 pub mod types;
 
@@ -245,22 +245,40 @@ impl<'a> FunctionCompiler<'a> {
 
     fn compile_expr(&mut self, expr: TypedExpr) -> Value {
         match expr {
-            TypedExpr::Value(r#type, parser::Value::Number(x)) => {
+            TypedExpr::Value(r#type, TypedValue::Number(x)) => {
                 self.builder.ins().iconst(I64, i64::from(x))
             }
-            TypedExpr::Value(r#type, parser::Value::Bool(x)) => {
+            TypedExpr::Value(r#type, TypedValue::Bool(x)) => {
                 self.builder.ins().iconst(I64, if x { 1 } else { 0 })
             }
-            TypedExpr::Value(r#type, parser::Value::Array(x)) => {
+            TypedExpr::Value(r#type, TypedValue::Array(x)) => {
                 let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                     StackSlotKind::ExplicitSlot,
                     64 * (x.len() as u32),
                 ));
+                let len = self.builder.ins().iconst(I64, x.len() as i64);
+                self.builder.ins().stack_store(len, slot, 0);
                 for i in 0..x.len() {
-                    let value = self.compile_expr(TypedExpr::Value(types::value_type(x[i]), x[i]));
-                    self.builder.ins().stack_store(value, slot, (i as i32) * 64);
+                    let value = self.compile_expr(x[i].clone());
+                    self.builder
+                        .ins()
+                        .stack_store(value, slot, ((i + 1) as i32) * 64);
                 }
                 self.builder.ins().stack_addr(I64, slot, 0)
+            }
+            TypedExpr::Index {
+                target,
+                index,
+                contained_type,
+            } => {
+                let target = self.compile_expr(*target);
+                let index = self.compile_expr(*index);
+                let value_size = self.builder.ins().iconst(I64, 64);
+                let offset = self.builder.ins().imul(value_size, index);
+                let offset = self.builder.ins().iadd(offset, value_size);
+                let stack_ptr = self.builder.ins().iadd(offset, target);
+
+                self.builder.ins().load(I64, MemFlags::new(), stack_ptr, 0)
             }
             TypedExpr::Ident(r#type, ident) => {
                 dbg!(&self.variables);

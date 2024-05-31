@@ -44,8 +44,10 @@ Expression: Expr = {
   <lhs: Expression> <o: Operator> <rhs: Term> => Expr::Operation(Box::new(lhs), o, Box::new(rhs)),
   <n: Number> => Expr::Value(Value::Number(n)),
   <b: Bool> => Expr::Value(Value::Bool(b)),
+  <a: Array> => Expr::Value(Value::Array(a)),
   <i: Ident> <a: Args>  => Expr::FunctionCall(i, a),
   <i: Ident> => Expr::Ident(i),
+  <lhs: Expression> "{"<rhs: Expression>"}" => Expr::Index {target: Box::new(lhs), index: Box::new(rhs)},
   "("<i: Ident> " is " <e: Expression>")"  => Expr::Def{ident: i, value: Box::new(e), },
   <l: Expression>"." <b: Expression> ";" => Expr::Then{lhs: Box::new(l), rhs: Box::new(b)},
   "if " <c: Expression> " then " <b: Expression> " else " <f: Expression> "end" => Expr::IfThen {condition: Box::new(c), then: Box::new(b), other: Box::new(f)}
@@ -59,7 +61,7 @@ Bool: bool = {
   "true" => true,
   "false" => false
 };
-
+Array: Vec<Expr> = "{" <v: Comma<Expression>> "}" => v;
 
 Term: Expr = {
   Ident => Expr::Ident(<>),

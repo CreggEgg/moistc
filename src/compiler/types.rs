@@ -1,3 +1,4 @@
+use core::panic;
 use std::{collections::HashMap, fmt::write, mem};
 
 use crate::parser::{Arg, Expr, Func, Op, Value};
@@ -8,6 +9,14 @@ pub enum Type {
     Float,
     Bool,
     Array(Box<Type>),
+}
+
+// i hate this but i cant think of how to get rid of this enum
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypedValue {
+    Number(i32),
+    Bool(bool),
+    Array(Vec<TypedExpr>),
 }
 
 #[derive(Debug, Clone)]
@@ -26,7 +35,7 @@ pub struct FuncType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypedExpr {
-    Value(Type, Value),
+    Value(Type, TypedValue),
     Ident(Type, String),
     Operation(Type, Box<TypedExpr>, Op, Box<TypedExpr>),
     Def {
@@ -42,6 +51,11 @@ pub enum TypedExpr {
         condition: Box<TypedExpr>,
         then: Box<TypedExpr>,
         other: Box<TypedExpr>,
+    },
+    Index {
+        target: Box<TypedExpr>,
+        index: Box<TypedExpr>,
+        contained_type: Type,
     },
 }
 
@@ -130,7 +144,10 @@ impl TypeGenerator {
 
     fn expression_type(&mut self, body: Expr, variables: &mut HashMap<String, Type>) -> TypedExpr {
         match body {
-            Expr::Value(value) => TypedExpr::Value(self.value_type(value.clone()), value),
+            Expr::Value(value) => TypedExpr::Value(
+                value_type(self.type_value(value.clone(), variables)),
+                self.type_value(value, variables),
+            ),
             Expr::Ident(ident) => TypedExpr::Ident(
                 variables
                     .get(&ident)
@@ -138,6 +155,24 @@ impl TypeGenerator {
                     .clone(),
                 ident,
             ),
+            Expr::Index { target, index } => {
+                let target_type = self.expression_type(*target, variables);
+                let index_type = self.expression_type(*index, variables);
+                match (get_type(target_type.clone()), get_type(index_type.clone())) {
+                    (Type::Array(contained), Type::Int) => TypedExpr::Index {
+                        target: Box::new(target_type),
+                        index: Box::new(index_type),
+                        contained_type: *contained,
+                    },
+                    (invalid_arr, invalid_int) => {
+                        println!(
+                            "Expected Array<_> got: {:?} and expected Int got: {:?}",
+                            invalid_arr, invalid_int
+                        );
+                        panic!("Types in index expression are not valid!");
+                    }
+                }
+            }
             Expr::Operation(lhs, op, rhs) => TypedExpr::Operation(
                 self.force_identical(lhs.clone(), rhs.clone(), variables),
                 Box::new(self.expression_type(*lhs, variables)),
@@ -172,7 +207,8 @@ impl TypeGenerator {
                         == get_type(self.expression_type(*arg.clone(), variables))
                 }) {
                     println!(
-                        "passed in: {:?}, expected: {:?}",
+                        "function: {}, passed in: {:?}, expected: {:?}",
+                        name,
                         args.iter()
                             .map(|arg| { get_type(self.expression_type(*arg.clone(), variables)) })
                             .collect::<Vec<Type>>(),
@@ -237,6 +273,18 @@ impl TypeGenerator {
             }
         }
     }
+
+    fn type_value(&mut self, value: Value, variables: &mut HashMap<String, Type>) -> TypedValue {
+        match value {
+            Value::Number(x) => TypedValue::Number(x),
+            Value::Bool(x) => TypedValue::Bool(x),
+            Value::Array(x) => TypedValue::Array(
+                x.iter()
+                    .map(|el| self.expression_type(el.clone(), variables))
+                    .collect::<Vec<TypedExpr>>(),
+            ),
+        }
+    }
 }
 
 fn get_type(expr: TypedExpr) -> Type {
@@ -252,14 +300,19 @@ fn get_type(expr: TypedExpr) -> Type {
             then,
             other,
         } => get_type(*then),
+        TypedExpr::Index {
+            target,
+            index,
+            contained_type,
+        } => contained_type,
     }
 }
-pub fn value_type(value: crate::parser::Value) -> Type {
+fn value_type(value: TypedValue) -> Type {
     match value {
-        crate::parser::Value::Number(_) => Type::Int,
-        Value::Bool(_) => Type::Bool,
-        Value::Array(els) => Type::Array(Box::new(value_type(
-            els.get(0).expect("Could not infer array type").clone(),
+        TypedValue::Number(_) => Type::Int,
+        TypedValue::Bool(_) => Type::Bool,
+        TypedValue::Array(inner) => Type::Array(Box::new(get_type(
+            inner.get(0).expect("Unable to infer array type").clone(),
         ))),
     }
 }

@@ -44,7 +44,7 @@ use crate::{compiler::types::Type, grammar};
 pub enum Value {
     Number(i32),
     Bool(bool),
-    Array(Vec<Value>),
+    Array(Vec<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,6 +65,15 @@ pub enum Expr {
         condition: Box<Expr>,
         then: Box<Expr>,
         other: Box<Expr>,
+    },
+    Index {
+        target: Box<Expr>,
+        index: Box<Expr>,
+    },
+    Each {
+        body: Box<Expr>,
+        ident: String,
+        target: Box<Expr>,
     },
 }
 
