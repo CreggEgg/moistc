@@ -75,6 +75,7 @@ pub enum Expr {
         ident: String,
         target: Box<Expr>,
     },
+    Len(Box<Expr>),
 }
 
 #[derive(Debug, Clone)]

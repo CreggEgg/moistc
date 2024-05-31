@@ -38,19 +38,22 @@ Comma<T>: Vec<T> = { // (1)
     }
 };
 
-Whitespace: String = <s:r"[ ]+"> => s.to_string();
+//Whitespace: String = <s:r"[ ]+"> => s.to_string();
 
 Expression: Expr = {
   <lhs: Expression> <o: Operator> <rhs: Term> => Expr::Operation(Box::new(lhs), o, Box::new(rhs)),
   <n: Number> => Expr::Value(Value::Number(n)),
   <b: Bool> => Expr::Value(Value::Bool(b)),
   <a: Array> => Expr::Value(Value::Array(a)),
+  <s: String> => Expr::Value(Value::Array(s)),
   <i: Ident> <a: Args>  => Expr::FunctionCall(i, a),
   <i: Ident> => Expr::Ident(i),
   <lhs: Expression> "{"<rhs: Expression>"}" => Expr::Index {target: Box::new(lhs), index: Box::new(rhs)},
   "("<i: Ident> " is " <e: Expression>")"  => Expr::Def{ident: i, value: Box::new(e), },
   <l: Expression>"." <b: Expression> ";" => Expr::Then{lhs: Box::new(l), rhs: Box::new(b)},
-  "if " <c: Expression> " then " <b: Expression> " else " <f: Expression> "end" => Expr::IfThen {condition: Box::new(c), then: Box::new(b), other: Box::new(f)}
+  "if " <c: Expression> " then " <b: Expression> " else " <f: Expression> "end" => Expr::IfThen {condition: Box::new(c), then: Box::new(b), other: Box::new(f)},
+  "each" <i: Ident> "in" <e: Expression> "do" <b: Expression> "end" => Expr::Each {body: Box::new(b), ident: i, target: Box::new(e)},
+  "#" <e: Expression>"#" => Expr::Len(Box::new(e))
 }
 
 // 
@@ -62,6 +65,7 @@ Bool: bool = {
   "false" => false
 };
 Array: Vec<Expr> = "{" <v: Comma<Expression>> "}" => v;
+String: Vec<Expr> = <s:r#""(.+)""#> => s[1..(s.len() - 1)].chars().map(|ch| {Expr::Value(Value::Number(ch as i32))}).collect::<Vec<Expr>>();
 
 Term: Expr = {
   Ident => Expr::Ident(<>),

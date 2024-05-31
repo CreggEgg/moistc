@@ -38,6 +38,7 @@ macro_rules! core_fn {
             .declare_function($name, Linkage::Import, &signature)
             .unwrap();
         $functions.insert($name.to_string(), fid);
+        println!("{}", $name.to_string());
     };
 }
 
@@ -75,10 +76,10 @@ impl Compiler {
 
         // Add print function
 
-        core_fn!("print", functions, obj_module, call_conv);
+        core_fn!("printint", functions, obj_module, call_conv);
         core_fn!("printchar", functions, obj_module, call_conv);
         core_fn!("printcharln", functions, obj_module, call_conv);
-        core_fn!("println", functions, obj_module, call_conv);
+        core_fn!("printintln", functions, obj_module, call_conv);
         core_fn!("readchar", functions, obj_module, call_conv);
 
         Self {
@@ -245,6 +246,10 @@ impl<'a> FunctionCompiler<'a> {
 
     fn compile_expr(&mut self, expr: TypedExpr) -> Value {
         match expr {
+            TypedExpr::Len(arr) => {
+                let arr = self.compile_expr(*arr);
+                self.builder.ins().load(I64, MemFlags::new(), arr, 0)
+            }
             TypedExpr::Value(r#type, TypedValue::Number(x)) => {
                 self.builder.ins().iconst(I64, i64::from(x))
             }
@@ -252,18 +257,7 @@ impl<'a> FunctionCompiler<'a> {
                 self.builder.ins().iconst(I64, if x { 1 } else { 0 })
             }
             TypedExpr::Value(r#type, TypedValue::Array(x)) => {
-                let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    64 * (x.len() as u32),
-                ));
-                let len = self.builder.ins().iconst(I64, x.len() as i64);
-                self.builder.ins().stack_store(len, slot, 0);
-                for i in 0..x.len() {
-                    let value = self.compile_expr(x[i].clone());
-                    self.builder
-                        .ins()
-                        .stack_store(value, slot, ((i + 1) as i32) * 64);
-                }
+                let slot = self.construct_array(x);
                 self.builder.ins().stack_addr(I64, slot, 0)
             }
             TypedExpr::Index {
@@ -336,6 +330,48 @@ impl<'a> FunctionCompiler<'a> {
                 let _ = self.compile_expr(*lhs);
                 self.compile_expr(*rhs)
             }
+            TypedExpr::Each {
+                body,
+                ident,
+                target,
+            } => {
+                let max = self.compile_expr(*target);
+
+                let header_block = self.builder.create_block();
+                let body_block = self.builder.create_block();
+                let exit_block = self.builder.create_block();
+                let init = self.builder.ins().iconst(I64, 1);
+
+                self.builder.ins().jump(header_block, &[init]);
+
+                self.builder.append_block_param(header_block, I64);
+                self.builder.append_block_param(body_block, I64);
+
+                self.builder.switch_to_block(header_block);
+                let i = self.builder.block_params(header_block)[0];
+                let cond = self.builder.ins().icmp(IntCC::SignedGreaterThan, i, max);
+                self.builder
+                    .ins()
+                    .brif(cond, exit_block, &[], body_block, &[i]);
+                self.builder.switch_to_block(body_block);
+                let var = Variable::new(self.variables.keys().len());
+                self.builder.declare_var(var, I64);
+                self.builder
+                    .def_var(var, self.builder.block_params(body_block)[0]);
+                self.variables.insert(ident, var);
+                self.compile_expr(*body);
+                let i = self.builder.use_var(var);
+                let i = self.builder.ins().iadd(i, init);
+                self.builder.ins().jump(header_block, &[i]);
+
+                self.builder.switch_to_block(exit_block);
+
+                self.builder.seal_block(header_block);
+                self.builder.seal_block(body_block);
+                self.builder.seal_block(exit_block);
+
+                self.builder.ins().iconst(I64, 0)
+            }
             TypedExpr::IfThen {
                 condition,
                 then,
@@ -394,6 +430,26 @@ impl<'a> FunctionCompiler<'a> {
         };
         self.builder.ins().sextend(I64, comp)
     }
+
+    fn construct_array(&mut self, x: Vec<TypedExpr>) -> codegen::ir::StackSlot {
+        let slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            64 * (x.len() as u32),
+        ));
+        let len = self.builder.ins().iconst(I64, x.len() as i64);
+        self.builder.ins().stack_store(len, slot, 0);
+        for i in 0..x.len() {
+            let value = self.compile_expr(x[i].clone());
+            self.builder
+                .ins()
+                .stack_store(value, slot, ((i + 1) as i32) * 64);
+        }
+        slot
+    }
+}
+
+fn drop_size_of(contained_type: types::Type) -> i64 {
+    todo!()
 }
 
 // mod prelude {

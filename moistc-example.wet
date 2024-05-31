@@ -1,8 +1,4 @@
-funion printstr[str: Array<Int>] (
-each c in 5 do
-	printcharln[str{c}] end
-)
-
 funion main[] (
-	printstr[{64, 65, 66}, 0]
+	(arr is "hi").
+	printchar[arr{0}];
 )

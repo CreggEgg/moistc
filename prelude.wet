@@ -1,0 +1,8 @@
+funion print[str: Array<Int>] (
+	each c in #str# do printchar[str{c - 1}] end
+)
+funion println[str: Array<Int>] (
+	print[str].
+	printchar[12];
+)
+

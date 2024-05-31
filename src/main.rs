@@ -26,7 +26,10 @@ lalrpop_mod!(grammar);
 
 fn main() {
     let args = Args::parse();
+    let prelude = include_str!("../prelude.wet");
     let file = fs::read_to_string(args.file).expect("Failed to read from file");
+    let file = format!("{prelude}\n{file}");
+    println!("{file}");
     match &args.mode[..] {
         "lex" => {
             dbg!(parser::extract_funcs(file));

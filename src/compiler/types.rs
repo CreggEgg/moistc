@@ -57,6 +57,12 @@ pub enum TypedExpr {
         index: Box<TypedExpr>,
         contained_type: Type,
     },
+    Each {
+        body: Box<TypedExpr>,
+        ident: String,
+        target: Box<TypedExpr>,
+    },
+    Len(Box<TypedExpr>),
 }
 
 pub struct TypeGenerator {
@@ -74,7 +80,7 @@ impl TypeGenerator {
             },
         );
         functions.insert(
-            "print".into(),
+            "printint".into(),
             FuncType {
                 args: vec![Type::Int],
                 ret: Type::Int,
@@ -88,7 +94,7 @@ impl TypeGenerator {
             },
         );
         functions.insert(
-            "println".into(),
+            "printintln".into(),
             FuncType {
                 args: vec![Type::Int],
                 ret: Type::Int,
@@ -144,10 +150,29 @@ impl TypeGenerator {
 
     fn expression_type(&mut self, body: Expr, variables: &mut HashMap<String, Type>) -> TypedExpr {
         match body {
+            Expr::Len(x) => TypedExpr::Len(Box::new(self.expression_type(*x, variables))),
             Expr::Value(value) => TypedExpr::Value(
                 value_type(self.type_value(value.clone(), variables)),
                 self.type_value(value, variables),
             ),
+            Expr::Each {
+                body,
+                ident,
+                target,
+            } => {
+                let target = self.expression_type(*target, variables);
+                let target_type = get_type(target.clone());
+                if target_type != Type::Int {
+                    println!("Expected {:?} got {:?}", Type::Int, target_type);
+                    panic!("Each target was not of type int");
+                }
+                variables.insert(ident.clone(), Type::Int);
+                TypedExpr::Each {
+                    target: Box::new(target),
+                    ident,
+                    body: Box::new(self.expression_type(*body, variables)),
+                }
+            }
             Expr::Ident(ident) => TypedExpr::Ident(
                 variables
                     .get(&ident)
@@ -196,6 +221,7 @@ impl TypeGenerator {
                 }
             }
             Expr::FunctionCall(name, args) => {
+                println!("{:?}", self.functions);
                 let function = self
                     .functions
                     .get(&name)
@@ -289,6 +315,7 @@ impl TypeGenerator {
 
 fn get_type(expr: TypedExpr) -> Type {
     match expr {
+        TypedExpr::Len(_) => Type::Int,
         TypedExpr::Value(r#type, _) => r#type,
         TypedExpr::Ident(r#type, _) => r#type,
         TypedExpr::Operation(r#type, _, _, _) => r#type,
@@ -305,6 +332,11 @@ fn get_type(expr: TypedExpr) -> Type {
             index,
             contained_type,
         } => contained_type,
+        TypedExpr::Each {
+            body,
+            ident,
+            target,
+        } => Type::Int,
     }
 }
 fn value_type(value: TypedValue) -> Type {
