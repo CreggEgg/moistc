@@ -1,4 +1,3 @@
 funion main[] (
-	(arr is "hi").
-	printchar[arr{0}];
+	printchar['h']
 )
