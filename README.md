@@ -1,6 +1,15 @@
 # Moistc
 Moistc is a joke programming language made for my own entertainment. Please do not use it under any circumstances for anything more than novelty.
 ---
+## Setup
+- Run this code in your terminal: `cargo install --git https://github.com/creggegg/moistc`
+- Install a c compiler (I use gcc)
+- Download the core.c file from this github repository and put in in your project folder
+- Create a file with the extension .wet
+- Write your code
+- Run `moistc build <filename>.wet && gcc main.o core.c`
+- This will produce an executable! YAY!
+
 ## Examples
 ### Hello world
 ```
